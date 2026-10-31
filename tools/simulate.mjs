@@ -4,10 +4,10 @@ import { CUBES, ACHIEVEMENTS } from '../js/data.js';
 import { createPlayer, stepPlayer, findThreatAhead, hazardBox, SIZE } from '../js/engine.js';
 
 const shardTotal = LEVELS.reduce((total, level) => total + level.shards.length, 0);
-const contentOk = LEVELS.length === 5 && CUBES.length === 10 && ACHIEVEMENTS.length === 10 && shardTotal === 15;
+const contentOk = LEVELS.length === 8 && CUBES.length === 10 && ACHIEVEMENTS.length === 10 && shardTotal === 24;
 console.log(`Content: ${LEVELS.length} levels, ${CUBES.length} cubes, ${ACHIEVEMENTS.length} achievements, ${shardTotal} shards.`);
 if (!contentOk) {
-  console.error('Expected exactly 5 levels, 10 cubes, 10 achievements and 15 shards.');
+  console.error('Expected exactly 8 levels, 10 cubes, 10 achievements and 24 shards.');
   process.exit(1);
 }
 console.log('');

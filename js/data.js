@@ -58,8 +58,8 @@ export const CUBES = [
   {
     id: 'rainbow', name: 'Overdrive', pattern: 'rainbow', face: 'determined',
     colors: { a: '#ff5d5d', b: '#635bff', edge: '#fff4b8', glow: '#ff7a3c', eye: '#25052a' },
-    condition: (s) => s.levelsCompleted >= 5,
-    unlock: 'Complete all 5 levels',
+    condition: (s) => s.levelsCompleted >= LEVELS.length,
+    unlock: `Complete all ${LEVELS.length} levels`,
   },
 ];
 
@@ -80,9 +80,9 @@ export const ACHIEVEMENTS = [
     progress: (s) => Math.min(3, s.levelsCompleted),
   },
   {
-    id: 'legend', name: 'Legend', icon: '♛', goal: 5,
-    desc: 'Complete all 5 levels.',
-    progress: (s) => Math.min(5, s.levelsCompleted),
+    id: 'legend', name: 'Legend', icon: '♛', goal: LEVELS.length,
+    desc: `Complete all ${LEVELS.length} levels.`,
+    progress: (s) => Math.min(LEVELS.length, s.levelsCompleted),
   },
   {
     id: 'flawless', name: 'Flawless', icon: '◈', goal: 1,
@@ -105,9 +105,9 @@ export const ACHIEVEMENTS = [
     progress: (s) => Math.min(8, s.shards),
   },
   {
-    id: 'completionist', name: 'Completionist', icon: '✹', goal: 15,
-    desc: 'Collect all 15 shards.',
-    progress: (s) => Math.min(15, s.shards),
+    id: 'completionist', name: 'Completionist', icon: '✹', goal: LEVELS.length * 3,
+    desc: `Collect all ${LEVELS.length * 3} shards.`,
+    progress: (s) => Math.min(LEVELS.length * 3, s.shards),
   },
   {
     id: 'fashionista', name: 'Fashionista', icon: '▣', goal: 5,

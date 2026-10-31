@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
   <meta name="theme-color" content="#0a0418" />
-  <meta name="description" content="Geometry Dash: Neon Edition — five handcrafted rhythm-platformer levels, ten cubes and ten achievements. Jump the spikes. Chase the shards." />
+  <meta name="description" content="Geometry Dash: Neon Edition — eight handcrafted rhythm-platformer levels, ten cubes, ten achievements and a built-in level editor. Jump the spikes. Chase the shards. Build your own run." />
   <title>Geometry Dash — Neon Edition</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="styles.css" />
@@ -47,14 +47,14 @@
               <span class="logo-a">GEOMETRY</span>
               <span class="logo-b">DASH</span>
             </h1>
-            <p class="tagline">Five levels. Ten cubes. One more attempt.</p>
+            <p class="tagline">Eight levels. Ten cubes. Infinite attempts.</p>
           </div>
 
           <div class="menu-actions">
             <button class="btn btn-hero" type="button" data-action="play">
               <span class="btn-icon">▶</span>
               <span>PLAY</span>
-              <small>5 LEVELS</small>
+              <small>8 LEVELS</small>
             </button>
             <div class="menu-row">
               <button class="btn btn-panel" type="button" data-action="cubes">
@@ -67,12 +67,17 @@
                 <span>AWARDS</span>
                 <small id="menu-awards">0/10</small>
               </button>
+              <button class="btn btn-panel" type="button" data-action="editor">
+                <span class="glyph">✦</span>
+                <span>EDITOR</span>
+                <small>CREATE</small>
+              </button>
             </div>
           </div>
 
           <div class="menu-stats">
-            <div class="stat"><b id="menu-levels">0/5</b><span>LEVELS</span></div>
-            <div class="stat"><b id="menu-shards">0/15</b><span>SHARDS</span></div>
+            <div class="stat"><b id="menu-levels">0/8</b><span>LEVELS</span></div>
+            <div class="stat"><b id="menu-shards">0/24</b><span>SHARDS</span></div>
             <div class="stat"><b id="menu-perfect">0</b><span>FLAWLESS</span></div>
           </div>
 
@@ -90,7 +95,7 @@
               <div class="kicker">MAINFRAME</div>
               <h2>Select Level</h2>
             </div>
-            <div class="page-meta" id="levels-done">0/5 COMPLETE</div>
+            <div class="page-meta" id="levels-done">0/8 COMPLETE</div>
           </header>
           <div class="level-grid" id="level-grid"></div>
           <p class="page-note">Ride the beat. Shards are optional collectibles — often just off the safest line.</p>
@@ -130,6 +135,94 @@
         </div>
         <button class="icon-btn sound-toggle" type="button" data-sound aria-label="Toggle sound">♪</button>
       </section>
+
+      <section class="screen screen-editor" id="screen-editor">
+        <header class="editor-chrome editor-head">
+          <div class="editor-lead">
+            <button class="icon-btn back" type="button" data-action="editor-exit" aria-label="Back to menu">←</button>
+            <div class="editor-heading">
+              <div class="kicker">CREATE MODE</div>
+              <h2>Level Editor</h2>
+            </div>
+          </div>
+          <div class="editor-head-actions">
+            <span class="editor-count" id="editor-count">0 OBJECTS · 0 ♦</span>
+            <button class="btn editor-save" type="button" data-action="editor-save">SAVE</button>
+            <button class="btn btn-hero editor-test" type="button" data-action="editor-test">
+              <span class="btn-icon">▶</span><span>TEST</span>
+            </button>
+          </div>
+        </header>
+
+        <div class="editor-chrome editor-dock">
+          <div class="editor-dock-main">
+            <div class="editor-tools" id="editor-tools" role="toolbar" aria-label="Editor tools">
+              <button class="tool-btn is-active" type="button" data-tool="spike" aria-pressed="true">
+                <span class="tool-icon">▲</span><span>SPIKE</span>
+              </button>
+              <button class="tool-btn" type="button" data-tool="spikeDown" aria-pressed="false">
+                <span class="tool-icon">▼</span><span>CEILING</span>
+              </button>
+              <button class="tool-btn" type="button" data-tool="block" aria-pressed="false">
+                <span class="tool-icon">■</span><span>BLOCK</span>
+              </button>
+              <button class="tool-btn" type="button" data-tool="saw" aria-pressed="false">
+                <span class="tool-icon">✹</span><span>SAW</span>
+              </button>
+              <button class="tool-btn" type="button" data-tool="pad" aria-pressed="false">
+                <span class="tool-icon">⏫</span><span>PAD</span>
+              </button>
+              <button class="tool-btn" type="button" data-tool="orb" aria-pressed="false">
+                <span class="tool-icon">◉</span><span>ORB</span>
+              </button>
+              <button class="tool-btn" type="button" data-tool="gravity" aria-pressed="false">
+                <span class="tool-icon">⇅</span><span>GRAVITY</span>
+              </button>
+              <button class="tool-btn" type="button" data-tool="speed" aria-pressed="false">
+                <span class="tool-icon">»</span><span>SPEED</span>
+              </button>
+              <button class="tool-btn" type="button" data-tool="shard" aria-pressed="false">
+                <span class="tool-icon">♦</span><span>SHARD</span>
+              </button>
+              <button class="tool-btn" type="button" data-tool="finish" aria-pressed="false">
+                <span class="tool-icon">⚑</span><span>FINISH</span>
+              </button>
+              <button class="tool-btn" type="button" data-tool="erase" aria-pressed="false">
+                <span class="tool-icon">⌫</span><span>ERASE</span>
+              </button>
+              <button class="tool-btn" type="button" data-tool="pan" aria-pressed="false">
+                <span class="tool-icon">✋</span><span>PAN</span>
+              </button>
+            </div>
+
+            <div class="editor-controls">
+              <label class="editor-field editor-name-field">
+                <span>NAME</span>
+                <input id="editor-name" type="text" maxlength="24" spellcheck="false" value="Custom Run" aria-label="Custom level name" />
+              </label>
+              <label class="editor-field">
+                <span>THEME</span>
+                <select id="editor-theme" aria-label="Editor theme"></select>
+              </label>
+              <label class="editor-field">
+                <span>SPEED</span>
+                <select id="editor-speed" aria-label="Editor speed"></select>
+              </label>
+              <div class="editor-pan">
+                <button class="editor-icon" type="button" data-pan="-1" aria-label="Pan left">◀</button>
+                <button class="editor-icon" type="button" data-pan="1" aria-label="Pan right">▶</button>
+              </div>
+              <button class="editor-icon" type="button" data-action="editor-undo" aria-label="Undo" title="Undo (Ctrl+Z)">↶</button>
+              <button class="editor-icon is-danger" type="button" data-action="editor-clear" aria-label="Clear level" title="Clear level">⌫</button>
+            </div>
+          </div>
+
+          <div class="editor-foot">
+            <p class="editor-tip" id="editor-tip">Tap the grid to place spikes. Drag to paint a row. Pick ✋ to pan.</p>
+            <span class="editor-status" id="editor-status">SAVED</span>
+          </div>
+        </div>
+      </section>
     </main>
 
     <div class="overlay" id="overlay-pause" aria-hidden="true">
@@ -141,7 +234,7 @@
         <div class="modal-actions">
           <button class="btn btn-hero" type="button" data-action="resume">RESUME</button>
           <button class="btn" type="button" data-action="restart">RESTART</button>
-          <button class="btn btn-ghost" type="button" data-action="quit">LEVEL SELECT</button>
+          <button class="btn btn-ghost" type="button" data-action="quit" id="pause-quit">LEVEL SELECT</button>
         </div>
         <p class="controls-note"><kbd>ESC</kbd> resume · <kbd>SPACE</kbd> jump</p>
       </div>
@@ -163,7 +256,7 @@
         <div class="modal-actions result-actions">
           <button class="btn btn-hero" type="button" data-action="next" id="btn-next">NEXT LEVEL</button>
           <button class="btn" type="button" data-action="retry">REPLAY</button>
-          <button class="btn btn-ghost" type="button" data-action="quit">LEVEL SELECT</button>
+          <button class="btn btn-ghost" type="button" data-action="quit" id="result-quit">LEVEL SELECT</button>
         </div>
       </div>
     </div>

@@ -1,9 +1,9 @@
-import { LEVELS, DIFFICULTY_LABELS, DIFFICULTY_COLORS } from './levels.js';
+import { LEVELS, THEMES, DIFFICULTY_LABELS, DIFFICULTY_COLORS } from './levels.js';
 import {
   CUBES, ACHIEVEMENTS, computeStats, achievementIsDone, achievementProgressLabel,
 } from './data.js';
 import {
-  createPlayer, stepPlayer, SIZE, FLOOR_Y, CEIL_Y, DEATH_TIME,
+  createPlayer, stepPlayer, SIZE, TILE, FLOOR_Y, CEIL_Y, DEATH_TIME,
 } from './engine.js';
 import { drawCube, drawCubePreview } from './skins.js';
 import { AudioEngine } from './audio.js';
@@ -15,6 +15,9 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const TAU = Math.PI * 2;
 
 const SAVE_KEY = 'geometry-dash-neon-v1';
+const EDITOR_KEY = 'geometry-dash-neon-editor-v1';
+const LEVEL_COUNT = LEVELS.length;
+const SHARD_TOTAL = LEVELS.reduce((total, level) => total + level.shards.length, 0);
 
 // ---------------------------------------------------------------------------
 // Save data
@@ -73,6 +76,533 @@ function writeSave() {
 }
 
 // ---------------------------------------------------------------------------
+// Level editor data
+// ---------------------------------------------------------------------------
+const EDITOR_MIN_LENGTH = 1400;
+const EDITOR_MAX_LENGTH = 40000;
+const EDITOR_DEFAULT_LENGTH = 6000;
+const EDITOR_TOOL_TIPS = {
+  spike: 'Tap the grid to place spikes. Drag to paint a row.',
+  spikeDown: 'Tap near the ceiling to place hanging spikes. Drag to paint.',
+  block: 'Tap or drag to build 1×1 blocks. Stack them into platforms.',
+  saw: 'Place spinning saws. Snap them to the grid to line up a gauntlet.',
+  pad: 'Jump pads launch you high. They work on the floor or on blocks.',
+  orb: 'Jump orbs trigger on a fresh tap while you are airborne.',
+  gravity: 'Gravity portals flip you to the ceiling. Add another to flip back.',
+  speed: 'Speed portals boost your run. Leave enough room to react.',
+  shard: 'Shards are optional collectibles. Scatter a few risk-reward gems.',
+  finish: 'Tap to move the finish line. Objects beyond it push it further out.',
+  erase: 'Tap or drag over objects and shards to delete them.',
+  pan: 'Drag the level to pan. Wheel, arrow keys or A/D also work.',
+};
+const EDITOR_THEME_LABELS = {
+  dawn: 'STEREO DAWN',
+  rush: 'NEON RUSH',
+  circuit: 'CIRCUIT BREAKER',
+  gravity: 'GRAVITY WELL',
+  overdrive: 'FINAL OVERDRIVE',
+  time: 'TIME MACHINES',
+  ystep: 'YSTEP',
+  clutter: 'CLUTTERFUNK',
+};
+
+function defaultEditor() {
+  return {
+    v: 1,
+    name: 'Custom Run',
+    theme: 'dawn',
+    speed: 360,
+    length: EDITOR_DEFAULT_LENGTH,
+    objects: [],
+    shards: [],
+  };
+}
+
+function sanitizeEditor(raw) {
+  const data = defaultEditor();
+  if (!raw || typeof raw !== 'object') return data;
+  if (typeof raw.name === 'string') data.name = raw.name.trim().slice(0, 24) || data.name;
+  if (THEMES[raw.theme]) data.theme = raw.theme;
+  data.speed = clamp(Number(raw.speed) || data.speed, 240, 520);
+  data.length = clamp(Number(raw.length) || data.length, EDITOR_MIN_LENGTH, EDITOR_MAX_LENGTH);
+
+  let serial = 0;
+  const usedIds = new Set();
+  const nextId = (type) => {
+    let id = '';
+    do { id = `custom-${type}-${++serial}`; } while (usedIds.has(id));
+    usedIds.add(id);
+    return id;
+  };
+  const finite = (value, fallback) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
+
+  if (Array.isArray(raw.objects)) {
+    for (const o of raw.objects.slice(0, 900)) {
+      if (!o || typeof o !== 'object') continue;
+      const x = clamp(finite(o.x, 0), 0, EDITOR_MAX_LENGTH);
+      if (o.type === 'spike') {
+        const dir = o.dir === -1 ? -1 : 1;
+        const fallbackY = dir === 1 ? FLOOR_Y : CEIL_Y;
+        data.objects.push({
+          id: nextId('spike'), type: 'spike', x,
+          y: clamp(finite(o.y, fallbackY), -100, FLOOR_Y),
+          size: clamp(finite(o.size, TILE), 22, 96), dir,
+        });
+      } else if (o.type === 'block') {
+        data.objects.push({
+          id: nextId('block'), type: 'block', x,
+          y: clamp(finite(o.y, FLOOR_Y - TILE), CEIL_Y - TILE, FLOOR_Y),
+          w: clamp(finite(o.w, TILE), 16, EDITOR_MAX_LENGTH),
+          h: clamp(finite(o.h, TILE), 14, 12 * TILE),
+        });
+      } else if (o.type === 'saw') {
+        data.objects.push({
+          id: nextId('saw'), type: 'saw', x,
+          y: clamp(finite(o.y, FLOOR_Y - 34), CEIL_Y, FLOOR_Y),
+          r: clamp(finite(o.r, 32), 16, 64),
+        });
+      } else if (o.type === 'pad') {
+        data.objects.push({
+          id: nextId('pad'), type: 'pad', x,
+          y: clamp(finite(o.y, FLOOR_Y), CEIL_Y, FLOOR_Y),
+          w: clamp(finite(o.w, 56), 30, 132),
+        });
+      } else if (o.type === 'orb') {
+        data.objects.push({
+          id: nextId('orb'), type: 'orb', x,
+          y: clamp(finite(o.y, FLOOR_Y - 210), CEIL_Y + 16, FLOOR_Y - 16),
+          r: clamp(finite(o.r, 22), 14, 40), kind: 'yellow',
+        });
+      } else if (o.type === 'portal') {
+        const kind = o.kind === 'speed' ? 'speed' : 'gravity';
+        const h = clamp(finite(o.h, kind === 'gravity' ? FLOOR_Y - CEIL_Y : 300), 80, FLOOR_Y - CEIL_Y);
+        data.objects.push({
+          id: nextId('portal'), type: 'portal', kind, x,
+          y: clamp(finite(o.y, kind === 'gravity' ? CEIL_Y : FLOOR_Y - 300), CEIL_Y, FLOOR_Y - h),
+          h, w: 54,
+          mul: clamp(finite(o.mul, 1.2), 0.8, 1.8),
+        });
+      }
+    }
+  }
+  if (Array.isArray(raw.shards)) {
+    for (const s of raw.shards.slice(0, 120)) {
+      if (!s || typeof s !== 'object') continue;
+      data.shards.push({
+        id: nextId('shard'),
+        x: clamp(finite(s.x, 0), 0, EDITOR_MAX_LENGTH),
+        y: clamp(finite(s.y, FLOOR_Y - 190), CEIL_Y + 16, FLOOR_Y - 16),
+        taken: false,
+      });
+    }
+  }
+  data.objects.sort((a, b) => a.x - b.x);
+  return data;
+}
+
+function loadEditor() {
+  let raw = null;
+  try { raw = JSON.parse(localStorage.getItem(EDITOR_KEY)); } catch { /* ignore */ }
+  return sanitizeEditor(raw);
+}
+
+const editor = {
+  ...loadEditor(),
+  camX: 0,
+  tool: 'spike',
+  hover: null,
+  dragging: false,
+  lastCell: '',
+  panStartX: 0,
+  panStartCam: 0,
+  undo: [],
+  clearArmed: 0,
+};
+let editorDirty = false;
+let editorSaveTimer = 0;
+let editorIdSerial = 0;
+
+function editorNextId(type) {
+  let id = '';
+  do { id = `custom-${type}-${++editorIdSerial}`; } while (
+    editor.objects.some((o) => o.id === id) || editor.shards.some((s) => s.id === id)
+  );
+  return id;
+}
+
+function editorFinishX() {
+  let maxX = 0;
+  for (const o of editor.objects) {
+    const extent = o.w || o.size || (o.r ? o.r * 2 : 0) || 0;
+    maxX = Math.max(maxX, o.x + extent);
+  }
+  for (const s of editor.shards) maxX = Math.max(maxX, s.x);
+  return clamp(Math.max(editor.length, maxX + 900), EDITOR_MIN_LENGTH, EDITOR_MAX_LENGTH);
+}
+
+function persistEditor({ silent = true } = {}) {
+  if (editorSaveTimer) {
+    clearTimeout(editorSaveTimer);
+    editorSaveTimer = 0;
+  }
+  try {
+    localStorage.setItem(EDITOR_KEY, JSON.stringify({
+      v: 1,
+      name: editor.name,
+      theme: editor.theme,
+      speed: editor.speed,
+      length: editor.length,
+      objects: editor.objects,
+      shards: editor.shards.map(({ taken, ...shard }) => shard),
+    }));
+  } catch { /* private mode */ }
+  editorDirty = false;
+  updateEditorUI();
+  if (!silent) {
+    audio.sfx('click');
+    toast('cube', 'LEVEL SAVED', `${editor.name || 'Custom Run'} — ${editor.objects.length} objects`, '✦');
+  }
+}
+
+function queueEditorSave() {
+  editorDirty = true;
+  updateEditorUI();
+  if (editorSaveTimer) clearTimeout(editorSaveTimer);
+  editorSaveTimer = window.setTimeout(() => persistEditor({ silent: true }), 320);
+}
+
+function buildEditorOptions() {
+  const themeSel = $('#editor-theme');
+  themeSel.innerHTML = Object.keys(THEMES).map((key) => (
+    `<option value="${key}">${EDITOR_THEME_LABELS[key] || key.toUpperCase()}</option>`
+  )).join('');
+  const speedSel = $('#editor-speed');
+  speedSel.innerHTML = [300, 360, 400, 440, 480].map((speed) => (
+    `<option value="${speed}">${speed} PX/S</option>`
+  )).join('');
+}
+
+function updateEditorUI() {
+  if (!editor.objects && !editor.shards) return;
+  const count = $('#editor-count');
+  if (count) {
+    count.textContent = `${editor.objects.length} OBJ · ${editor.shards.length} ♦ · ${Math.round(editorFinishX() / 100)}M`;
+  }
+  const status = $('#editor-status');
+  if (status) {
+    status.textContent = editorDirty ? 'UNSAVED' : 'SAVED';
+    status.classList.toggle('is-dirty', editorDirty);
+  }
+  const themeSel = $('#editor-theme');
+  if (themeSel && themeSel.value !== editor.theme) themeSel.value = editor.theme;
+  const speedSel = $('#editor-speed');
+  if (speedSel && speedSel.value !== String(editor.speed)) speedSel.value = String(editor.speed);
+  const nameInput = $('#editor-name');
+  if (nameInput && document.activeElement !== nameInput && nameInput.value !== editor.name) {
+    nameInput.value = editor.name;
+  }
+  for (const btn of $$('[data-tool]')) {
+    const active = btn.dataset.tool === editor.tool;
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-pressed', String(active));
+  }
+  const tip = $('#editor-tip');
+  if (tip) tip.textContent = EDITOR_TOOL_TIPS[editor.tool] || EDITOR_TOOL_TIPS.spike;
+}
+
+function setEditorTool(tool) {
+  if (!EDITOR_TOOL_TIPS[tool]) return;
+  editor.tool = tool;
+  editor.hover = null;
+  audio.sfx('click');
+  updateEditorUI();
+}
+
+function editorPanStep() {
+  return view.portrait ? 260 : 420;
+}
+
+function editorMaxCam() {
+  return Math.max(0, editorFinishX() + 760 - view.logicalW * 0.82);
+}
+
+function clampEditorCam() {
+  editor.camX = clamp(editor.camX, 0, editorMaxCam());
+}
+
+function editorWorldPoint(clientX, clientY) {
+  return {
+    x: editor.camX + clientX / view.scale,
+    y: clientY / view.scale - view.offsetY,
+  };
+}
+
+function editorSnapX(value) {
+  return clamp(Math.floor(value / TILE) * TILE, 0, EDITOR_MAX_LENGTH - TILE);
+}
+
+function editorRow(value) {
+  return clamp(Math.floor((FLOOR_Y - value) / TILE), 0, 11);
+}
+
+function editorCeilRow(value) {
+  return clamp(Math.floor((value - CEIL_Y) / TILE), 0, 11);
+}
+
+function makeEditorPlacement(tool, point) {
+  const sx = editorSnapX(point.x);
+  const row = editorRow(point.y);
+  if (tool === 'spike') {
+    return {
+      key: `spike:${sx}:${row}`,
+      object: { type: 'spike', x: sx, y: FLOOR_Y - row * TILE, size: TILE, dir: 1 },
+    };
+  }
+  if (tool === 'spikeDown') {
+    const crow = editorCeilRow(point.y);
+    return {
+      key: `spikeDown:${sx}:${crow}`,
+      object: { type: 'spike', x: sx, y: CEIL_Y + crow * TILE, size: TILE, dir: -1 },
+    };
+  }
+  if (tool === 'block') {
+    return {
+      key: `block:${sx}:${row}`,
+      object: { type: 'block', x: sx, y: FLOOR_Y - (row + 1) * TILE, w: TILE, h: TILE },
+    };
+  }
+  if (tool === 'saw') {
+    const srow = clamp(Math.round((FLOOR_Y - 34 - point.y) / TILE), 0, 10);
+    return {
+      key: `saw:${sx}:${srow}`,
+      object: { type: 'saw', x: sx + TILE / 2, y: FLOOR_Y - 34 - srow * TILE, r: 32 },
+    };
+  }
+  if (tool === 'pad') {
+    return {
+      key: `pad:${sx}:${row}`,
+      object: { type: 'pad', x: sx, y: FLOOR_Y - row * TILE, w: 56 },
+    };
+  }
+  if (tool === 'orb') {
+    return {
+      key: `orb:${sx}:${row}`,
+      object: { type: 'orb', x: sx + TILE / 2, y: FLOOR_Y - row * TILE - TILE / 2, r: 22, kind: 'yellow' },
+    };
+  }
+  if (tool === 'gravity') {
+    const y = CEIL_Y;
+    return {
+      key: `gravity:${sx}:${y}`,
+      object: { type: 'portal', kind: 'gravity', x: sx, y, h: FLOOR_Y - CEIL_Y, w: 54 },
+    };
+  }
+  if (tool === 'speed') {
+    const y = FLOOR_Y - 300;
+    return {
+      key: `speed:${sx}:${y}`,
+      object: { type: 'portal', kind: 'speed', x: sx, y, h: 300, w: 54, mul: 1.2 },
+    };
+  }
+  if (tool === 'shard') {
+    return {
+      key: `shard:${sx}:${row}`,
+      shard: { x: sx + TILE / 2, y: FLOOR_Y - row * TILE - TILE / 2, taken: false },
+    };
+  }
+  if (tool === 'finish') {
+    return { key: `finish:${sx}`, length: clamp(sx, EDITOR_MIN_LENGTH, EDITOR_MAX_LENGTH) };
+  }
+  return null;
+}
+
+function editorObjectKey(o) {
+  if (o.type === 'block') return `block:${o.x}:${o.y}:${o.w}:${o.h}`;
+  if (o.type === 'spike') return `spike:${o.x}:${o.y}:${o.dir}`;
+  if (o.type === 'portal') return `portal:${o.kind}:${o.x}:${o.y}`;
+  return `${o.type}:${o.x}:${o.y}`;
+}
+
+function applyEditorPlacement(place) {
+  if (!place) return false;
+  if (place.length !== undefined) {
+    if (editor.length === place.length) return false;
+    editor.length = place.length;
+  } else if (place.shard) {
+    const duplicate = editor.shards.some((s) => (
+      Math.abs(s.x - place.shard.x) < 1 && Math.abs(s.y - place.shard.y) < 1
+    ));
+    if (duplicate) return false;
+    editor.shards.push({ ...place.shard, id: editorNextId('shard') });
+  } else if (place.object) {
+    const key = editorObjectKey(place.object);
+    if (editor.objects.some((o) => editorObjectKey(o) === key)) return false;
+    editor.objects.push({ ...place.object, id: editorNextId(place.object.type) });
+    editor.objects.sort((a, b) => a.x - b.x);
+  } else {
+    return false;
+  }
+  queueEditorSave();
+  return true;
+}
+
+function editorObjectBounds(o) {
+  if (o.type === 'block') return { x: o.x, y: o.y, w: o.w, h: o.h };
+  if (o.type === 'spike') {
+    return o.dir === -1
+      ? { x: o.x, y: o.y, w: o.size, h: o.size }
+      : { x: o.x, y: o.y - o.size, w: o.size, h: o.size };
+  }
+  if (o.type === 'saw') return { x: o.x - o.r, y: o.y - o.r, w: o.r * 2, h: o.r * 2 };
+  if (o.type === 'pad') return { x: o.x, y: o.y - 22, w: o.w, h: 34 };
+  if (o.type === 'orb') return { x: o.x - o.r, y: o.y - o.r, w: o.r * 2, h: o.r * 2 };
+  if (o.type === 'portal') return { x: o.x, y: o.y, w: o.w, h: o.h };
+  return { x: o.x, y: o.y, w: TILE, h: TILE };
+}
+
+function pointRectDistance(x, y, rect) {
+  const dx = Math.max(rect.x - x, 0, x - (rect.x + rect.w));
+  const dy = Math.max(rect.y - y, 0, y - (rect.y + rect.h));
+  return Math.hypot(dx, dy);
+}
+
+function findEditorTarget(point, radius = 44) {
+  let best = null;
+  let bestDistance = radius;
+  editor.objects.forEach((o) => {
+    const distance = pointRectDistance(point.x, point.y, editorObjectBounds(o));
+    if (distance <= bestDistance) {
+      bestDistance = distance;
+      best = { kind: 'object', object: o, key: editorObjectKey(o) };
+    }
+  });
+  editor.shards.forEach((s) => {
+    const distance = Math.hypot(point.x - s.x, point.y - s.y);
+    if (distance <= Math.min(bestDistance, 34)) {
+      bestDistance = distance;
+      best = { kind: 'shard', shard: s, key: `shard:${s.id}` };
+    }
+  });
+  return best;
+}
+
+function pushEditorUndo() {
+  editor.undo.push(JSON.stringify({
+    objects: editor.objects,
+    shards: editor.shards,
+    length: editor.length,
+  }));
+  if (editor.undo.length > 80) editor.undo.shift();
+}
+
+function undoEditor() {
+  const snapshot = editor.undo.pop();
+  if (!snapshot) {
+    audio.sfx('click');
+    toast('locked', 'NOTHING TO UNDO', 'Place or erase something first.', '↶');
+    return;
+  }
+  const data = JSON.parse(snapshot);
+  editor.objects = data.objects;
+  editor.shards = data.shards;
+  editor.length = data.length;
+  editor.lastCell = '';
+  queueEditorSave();
+  audio.sfx('click');
+}
+
+function clearEditor() {
+  const now = Date.now();
+  const button = $('[data-action="editor-clear"]');
+  if (!editor.clearArmed || now - editor.clearArmed > 2600) {
+    editor.clearArmed = now;
+    if (button) button.classList.add('is-armed');
+    audio.sfx('click');
+    toast('locked', 'CLEAR THE LEVEL?', 'Press ⌫ again to wipe all objects and shards.', '⌫');
+    return;
+  }
+  editor.clearArmed = 0;
+  if (button) button.classList.remove('is-armed');
+  pushEditorUndo();
+  editor.objects = [];
+  editor.shards = [];
+  editor.length = EDITOR_DEFAULT_LENGTH;
+  editor.lastCell = '';
+  queueEditorSave();
+  audio.sfx('death');
+  toast('cube', 'LEVEL CLEARED', 'Undo is available if you change your mind.', '✦');
+}
+
+function eraseEditorAt(point) {
+  const target = findEditorTarget(point);
+  if (!target) return false;
+  if (target.kind === 'object') {
+    const i = editor.objects.indexOf(target.object);
+    if (i >= 0) editor.objects.splice(i, 1);
+  } else {
+    const i = editor.shards.indexOf(target.shard);
+    if (i >= 0) editor.shards.splice(i, 1);
+  }
+  queueEditorSave();
+  return true;
+}
+
+function editorPointerDown(e) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  e.preventDefault();
+  audio.ensure();
+  const point = editorWorldPoint(e.clientX, e.clientY);
+  editor.hover = point;
+  editor.dragging = true;
+  editor.lastCell = '';
+  if (editor.tool === 'pan') {
+    editor.panStartX = e.clientX;
+    editor.panStartCam = editor.camX;
+  } else {
+    pushEditorUndo();
+    if (editor.tool === 'erase') {
+      eraseEditorAt(point);
+    } else {
+      const place = makeEditorPlacement(editor.tool, point);
+      if (applyEditorPlacement(place)) editor.lastCell = place.key;
+    }
+  }
+  if (canvas.setPointerCapture) {
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  }
+}
+
+function editorPointerMove(e) {
+  if (mode !== 'editor') return;
+  const point = editorWorldPoint(e.clientX, e.clientY);
+  if (editor.dragging && editor.tool === 'pan') {
+    const dx = (e.clientX - editor.panStartX) / view.scale;
+    editor.camX = clamp(editor.panStartCam - dx, 0, editorMaxCam());
+    return;
+  }
+  editor.hover = point;
+  if (!editor.dragging || editor.tool === 'pan' || editor.tool === 'finish') return;
+  if (editor.tool === 'erase') {
+    const target = findEditorTarget(point);
+    if (target && target.key !== editor.lastCell) {
+      eraseEditorAt(point);
+      editor.lastCell = target.key;
+    }
+    return;
+  }
+  const place = makeEditorPlacement(editor.tool, point);
+  if (place && place.key !== editor.lastCell) {
+    if (applyEditorPlacement(place)) editor.lastCell = place.key;
+  }
+}
+
+function editorPointerUp() {
+  if (mode !== 'editor') return;
+  editor.dragging = false;
+  editor.lastCell = '';
+}
+
+// ---------------------------------------------------------------------------
 // Canvas and view
 // ---------------------------------------------------------------------------
 const canvas = $('#game');
@@ -110,9 +640,10 @@ window.addEventListener('orientationchange', () => setTimeout(resize, 120));
 // ---------------------------------------------------------------------------
 // Game state
 // ---------------------------------------------------------------------------
-let mode = 'menu'; // menu | playing | dead | paused | finished
+let mode = 'menu'; // menu | playing | dead | paused | finished | editor
 let current = null;
 let currentIndex = -1;
+let customPlaytest = false;
 let player = createPlayer();
 let runAttempts = 0;
 let runShardIds = [];
@@ -205,12 +736,12 @@ function showScreen(name) {
 function refreshCounts() {
   const stats = getStats();
   const done = save.achievements.length;
-  $('#menu-levels').textContent = `${stats.levelsCompleted}/5`;
-  $('#menu-shards').textContent = `${stats.shards}/15`;
+  $('#menu-levels').textContent = `${stats.levelsCompleted}/${LEVEL_COUNT}`;
+  $('#menu-shards').textContent = `${stats.shards}/${SHARD_TOTAL}`;
   $('#menu-perfect').textContent = `${stats.perfectRuns}`;
   $('#menu-cubes').textContent = `${save.unlockedCubes.length}/10`;
   $('#menu-awards').textContent = `${done}/10`;
-  $('#levels-done').textContent = `${stats.levelsCompleted}/5 COMPLETE`;
+  $('#levels-done').textContent = `${stats.levelsCompleted}/${LEVEL_COUNT} COMPLETE`;
   $('#cubes-count').textContent = `${save.unlockedCubes.length}/10 UNLOCKED`;
   $('#awards-count').textContent = `${done}/10 EARNED`;
 }
@@ -330,7 +861,7 @@ function buildLevelGrid() {
         <p>${level.tagline}</p>
         <div class="level-meta">
           <span>${level.speed > 430 ? '⚡' : '▶'} ${level.speed} px/s</span>
-          <span class="${shards === 3 ? 'is-full' : ''}">♦ ${shards}/3</span>
+          <span class="${shards === level.shards.length ? 'is-full' : ''}">♦ ${shards}/${level.shards.length}</span>
           <span class="level-arrow">PLAY →</span>
         </div>
       </div>`;
@@ -419,6 +950,7 @@ function equipCube(id) {
 function startLevel(id) {
   const idx = LEVELS.findIndex((l) => l.id === id);
   if (idx < 0) return;
+  customPlaytest = false;
   current = LEVELS[idx];
   currentIndex = idx;
   for (const s of current.shards) s.taken = false;
@@ -456,9 +988,11 @@ function spawnPlayer() {
   player = createPlayer();
   for (const s of current.shards) s.taken = false;
   runAttempts++;
-  const data = levelSave(current.id);
-  data.attempts = (data.attempts || 0) + 1;
-  save.stats.attempts = (save.stats.attempts || 0) + 1;
+  if (!customPlaytest) {
+    const data = levelSave(current.id);
+    data.attempts = (data.attempts || 0) + 1;
+    save.stats.attempts = (save.stats.attempts || 0) + 1;
+  }
   runShardIds = [];
   pendingPress = false;
   inputHeld = false;
@@ -467,7 +1001,7 @@ function spawnPlayer() {
   mode = 'playing';
   landPulse = 0;
   updateHUD();
-  queueSave();
+  if (!customPlaytest) queueSave();
 }
 
 function onDeath() {
@@ -478,15 +1012,19 @@ function onDeath() {
   deathFlash = 1;
   audio.sfx('death');
   burst(player.x + SIZE / 2, player.y + SIZE / 2, 34, selectedCube().colors, 1.15);
-  save.stats.deaths++;
   const pct = Math.floor(player.progress * 100);
-  const data = levelSave(current.id);
-  if (pct > (data.best || 0)) {
-    data.best = pct;
+  if (customPlaytest) {
     if (pct > 0) floaters.push({ x: player.x, y: player.y - 40, text: `${pct}%`, color: '#fff', life: 1.2, max: 1.2 });
+  } else {
+    save.stats.deaths++;
+    const data = levelSave(current.id);
+    if (pct > (data.best || 0)) {
+      data.best = pct;
+      if (pct > 0) floaters.push({ x: player.x, y: player.y - 40, text: `${pct}%`, color: '#fff', life: 1.2, max: 1.2 });
+    }
+    evaluateProgress();
+    queueSave();
   }
-  evaluateProgress();
-  queueSave();
   updateHUD();
 }
 
@@ -496,6 +1034,19 @@ function onFinish() {
   finishedShown = false;
   flash = 0.85;
   audio.sfx('win');
+  if (customPlaytest) {
+    const allShards = current.shards.length > 0 && current.shards.every((s) => runShardIds.includes(s.id));
+    finishFlags = ['CUSTOM CLEAR'];
+    if (allShards) finishFlags.push('ALL SHARDS');
+    if (runAttempts === 1) finishFlags.push('FIRST TRY');
+    finishWasCompleted = false;
+    finishFlawless = false;
+    finishAllShards = allShards;
+    burst(player.x + SIZE / 2, player.y + SIZE / 2, 70, selectedCube().colors, 1.7);
+    burst(player.x + SIZE / 2, player.y + SIZE / 2, 30, { a: '#ffffff', b: '#ffe45e' }, 1.2);
+    updateHUD();
+    return;
+  }
   const data = levelSave(current.id);
   const wasCompleted = Boolean(data.completed);
   data.completed = true;
@@ -529,23 +1080,29 @@ let finishAllShards = false;
 function showResult() {
   if (finishedShown || mode !== 'finished' || !current) return;
   finishedShown = true;
-  const data = levelSave(current.id);
   $('#result-title').textContent = current.name;
   $('#result-percent').textContent = '100%';
   $('#result-attempts').textContent = String(runAttempts);
-  $('#result-shards').textContent = `${runShardIds.length}/3`;
-  $('#result-best').textContent = `${data.best}%`;
-  $('#result-kicker').textContent = finishFlawless && !finishWasCompleted ? 'FLAWLESS CLEAR' : 'LEVEL COMPLETE';
+  $('#result-shards').textContent = `${runShardIds.length}/${current.shards.length}`;
+  if (customPlaytest) {
+    $('#result-best').textContent = `${Math.round(current.length / 100)}M`;
+    $('#result-kicker').textContent = finishAllShards ? 'CUSTOM FLAWLESS' : 'CUSTOM CLEAR';
+  } else {
+    const data = levelSave(current.id);
+    $('#result-best').textContent = `${data.best}%`;
+    $('#result-kicker').textContent = finishFlawless && !finishWasCompleted ? 'FLAWLESS CLEAR' : 'LEVEL COMPLETE';
+  }
   const flags = $('#result-flags');
   flags.innerHTML = finishFlags.map((f, i) => `<span style="--i:${i}">${f}</span>`).join('');
   const nextBtn = $('#btn-next');
-  if (currentIndex < LEVELS.length - 1) {
+  if (!customPlaytest && currentIndex < LEVELS.length - 1) {
     nextBtn.classList.remove('is-hidden');
     nextBtn.textContent = 'NEXT LEVEL';
     nextBtn.dataset.action = 'next';
   } else {
     nextBtn.classList.add('is-hidden');
   }
+  $('#result-quit').textContent = customPlaytest ? 'BACK TO EDITOR' : 'LEVEL SELECT';
   showOverlay($('#overlay-result'));
   audio.stopMusic();
   musicStarted = false;
@@ -553,6 +1110,10 @@ function showResult() {
 }
 
 function quitToLevels() {
+  if (customPlaytest) {
+    returnToEditor();
+    return;
+  }
   if (current && mode !== 'finished') {
     const pct = Math.floor(player.progress * 100);
     const data = levelSave(current.id);
@@ -571,10 +1132,131 @@ function quitToLevels() {
   showScreen('levels');
 }
 
+// ---------------------------------------------------------------------------
+// Editor flow / custom playtest
+// ---------------------------------------------------------------------------
+function enterEditor() {
+  customPlaytest = false;
+  current = null;
+  currentIndex = -1;
+  mode = 'editor';
+  hideOverlay($('#overlay-pause'));
+  hideOverlay($('#overlay-result'));
+  $('#hud').classList.add('is-hidden');
+  audio.stopMusic();
+  musicStarted = false;
+  audio.duckMusic(false);
+  editor.camX = 0;
+  editor.hover = null;
+  editor.dragging = false;
+  editor.lastCell = '';
+  showScreen('editor');
+  updateEditorUI();
+  lastTime = performance.now() / 1000;
+  accumulator = 0;
+}
+
+function exitEditor() {
+  persistEditor({ silent: true });
+  mode = 'menu';
+  current = null;
+  currentIndex = -1;
+  customPlaytest = false;
+  editor.hover = null;
+  editor.dragging = false;
+  showScreen('menu');
+}
+
+function returnToEditor() {
+  hideOverlay($('#overlay-pause'));
+  hideOverlay($('#overlay-result'));
+  mode = 'editor';
+  current = null;
+  currentIndex = -1;
+  customPlaytest = false;
+  editor.hover = null;
+  editor.dragging = false;
+  editor.lastCell = '';
+  $('#hud').classList.add('is-hidden');
+  audio.stopMusic();
+  musicStarted = false;
+  audio.duckMusic(false);
+  showScreen('editor');
+  updateEditorUI();
+  lastTime = performance.now() / 1000;
+  accumulator = 0;
+}
+
+function buildCustomLevel() {
+  const objects = editor.objects.map((o) => ({ ...o })).sort((a, b) => a.x - b.x);
+  const shards = editor.shards.map((s, i) => ({
+    id: `custom-run-s${i + 1}`,
+    x: s.x,
+    y: s.y,
+    taken: false,
+  }));
+  return {
+    id: 'custom',
+    name: (editor.name || 'Custom Run').trim() || 'Custom Run',
+    tagline: 'Built in the editor',
+    difficulty: 3,
+    speed: editor.speed,
+    length: editorFinishX(),
+    theme: THEMES[editor.theme] || THEMES.dawn,
+    bpm: 132,
+    root: 57,
+    scale: [0, 3, 5, 7, 10],
+    musicPattern: [0, 3, 7, 10, 7, 3, 5, 7, 10, 12, 10, 7, 5, 3, 0, 3],
+    objects,
+    shards,
+  };
+}
+
+function startCustomPlaytest() {
+  persistEditor({ silent: true });
+  if (!editor.objects.length && !editor.shards.length) {
+    audio.sfx('click');
+    toast('locked', 'EMPTY LEVEL', 'Place at least one object, then hit TEST.', '✦');
+    updateEditorUI();
+    return;
+  }
+  current = buildCustomLevel();
+  currentIndex = -1;
+  customPlaytest = true;
+  runAttempts = 0;
+  runShardIds = [];
+  deathTimer = 0;
+  finishTimer = 0;
+  finishedShown = false;
+  particles = [];
+  floaters = [];
+  trail = [];
+  shake = 0;
+  flash = 0;
+  deathFlash = 0;
+  $('#hud-level').textContent = 'CUSTOM RUN';
+  $('#hud').classList.remove('is-hidden');
+  const hint = $('#hud-hint');
+  hint.classList.remove('is-animating');
+  void hint.offsetWidth;
+  hint.classList.add('is-animating');
+  showScreen(null);
+  hideOverlay($('#overlay-result'));
+  hideOverlay($('#overlay-pause'));
+  spawnPlayer();
+  mode = 'playing';
+  audio.ensure();
+  audio.playMusic(current);
+  musicStarted = true;
+  lastTime = performance.now() / 1000;
+  accumulator = 0;
+}
+
 function setPaused(paused) {
   if (paused && mode === 'playing') {
     mode = 'paused';
-    $('#pause-level').textContent = `${current.name} · ${Math.floor(player.progress * 100)}%`;
+    $('#pause-level').textContent = `${customPlaytest ? 'CUSTOM RUN · ' : ''}${current.name} · ${Math.floor(player.progress * 100)}%`;
+    $('#pause-quit').textContent = customPlaytest ? 'BACK TO EDITOR' : 'LEVEL SELECT';
     showOverlay($('#overlay-pause'));
     audio.duckMusic(true);
   } else if (!paused && mode === 'paused') {
@@ -615,11 +1297,14 @@ function updateHUD() {
   $('#progress-knob').style.left = `${pct}%`;
   $('#progress-pct').textContent = `${pct}%`;
   $('#hud-attempt').textContent = `ATTEMPT ${runAttempts}`;
-  const shards = $$('#hud-shards span');
   const total = current.shards.length;
+  const holder = $('#hud-shards');
+  if (holder.children.length !== total) {
+    holder.innerHTML = Array.from({ length: total }, () => '<span>♦</span>').join('');
+  }
+  const shards = $$('#hud-shards span');
   shards.forEach((el, i) => {
     el.classList.toggle('is-filled', i < runShardIds.length);
-    el.classList.toggle('is-empty-slot', i >= total);
   });
 }
 
@@ -701,10 +1386,12 @@ function updateEffects(dt) {
 function handleEvents(events) {
   for (const ev of events) {
     if (ev.type === 'jump') {
-      save.stats.jumps++;
       audio.sfx('jump');
       dust(ev.x, ev.y, 1, hexA('#ffffff', 0.8), 5);
-      if (save.stats.jumps % 25 === 0) { evaluateProgress(); queueSave(); }
+      if (!customPlaytest) {
+        save.stats.jumps++;
+        if (save.stats.jumps % 25 === 0) { evaluateProgress(); queueSave(); }
+      }
     } else if (ev.type === 'land') {
       if (ev.impact > 0.35) {
         landPulse = Math.max(landPulse, ev.impact);
@@ -733,10 +1420,12 @@ function handleEvents(events) {
       audio.sfx('shard');
       runShardIds.push(ev.id);
       burst(ev.x, ev.y, 20, { a: '#ffffff', b: current.theme.accent2 }, 0.7);
-      floaters.push({ x: ev.x, y: ev.y - 18, text: `SHARD ${runShardIds.length}/3`, color: current.theme.accent2, life: 1.1, max: 1.1 });
-      evaluateProgress();
+      floaters.push({ x: ev.x, y: ev.y - 18, text: `SHARD ${runShardIds.length}/${current.shards.length}`, color: current.theme.accent2, life: 1.1, max: 1.1 });
+      if (!customPlaytest) {
+        evaluateProgress();
+        queueSave();
+      }
       updateHUD();
-      queueSave();
     } else if (ev.type === 'death') {
       onDeath();
     } else if (ev.type === 'finish') {
@@ -751,7 +1440,7 @@ function update(dt) {
   pendingPress = false;
   handleEvents(events);
   if (mode === 'playing') {
-    save.stats.time = (save.stats.time || 0) + dt;
+    if (!customPlaytest) save.stats.time = (save.stats.time || 0) + dt;
     updateHUD();
   }
 }
@@ -1362,11 +2051,225 @@ function drawParticles(camX) {
   }
 }
 
+function drawEditorGrid(camX, theme) {
+  const left = Math.floor(camX / TILE) * TILE;
+  const right = camX + view.logicalW;
+  ctx.save();
+  ctx.translate(-camX, 0);
+  ctx.strokeStyle = hexA(theme.accent2, 0.095);
+  ctx.lineWidth = 1;
+  for (let x = left; x <= right; x += TILE) {
+    ctx.beginPath();
+    ctx.moveTo(x, CEIL_Y);
+    ctx.lineTo(x, FLOOR_Y);
+    ctx.stroke();
+  }
+  for (let y = FLOOR_Y; y >= CEIL_Y; y -= TILE) {
+    ctx.beginPath();
+    ctx.moveTo(left, y);
+    ctx.lineTo(right, y);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = hexA(theme.accent2, 0.34);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(left, CEIL_Y);
+  ctx.lineTo(right, CEIL_Y);
+  ctx.moveTo(left, FLOOR_Y);
+  ctx.lineTo(right, FLOOR_Y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawEditorMarker(x, label, color, theme, camX, { solid = false, alpha = 1 } = {}) {
+  if (x < camX - 140 || x > camX + view.logicalW + 140) return;
+  ctx.save();
+  ctx.translate(x, 0);
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = hexA(color, 0.1);
+  ctx.fillRect(-10, CEIL_Y, 20, FLOOR_Y - CEIL_Y);
+  ctx.strokeStyle = hexA(color, 0.9);
+  ctx.lineWidth = 2;
+  if (!solid) ctx.setLineDash([9, 8]);
+  ctx.beginPath();
+  ctx.moveTo(0, CEIL_Y);
+  ctx.lineTo(0, FLOOR_Y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 18;
+  ctx.strokeStyle = hexA(color, 0.75);
+  ctx.strokeRect(-10, CEIL_Y, 20, FLOOR_Y - CEIL_Y);
+  ctx.shadowBlur = 0;
+
+  ctx.font = '800 10px system-ui, sans-serif';
+  const width = ctx.measureText(label).width + 20;
+  ctx.fillStyle = 'rgba(5,2,13,0.78)';
+  roundRect(ctx, -width / 2, CEIL_Y + 16, width, 23, 11);
+  ctx.fill();
+  ctx.strokeStyle = hexA(color, 0.9);
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, 0, CEIL_Y + 28);
+  ctx.restore();
+}
+
+function drawEditorGhost(t, theme, camX) {
+  if (!editor.hover) return;
+  const point = editor.hover;
+  if (editor.tool === 'pan') {
+    ctx.save();
+    ctx.translate(-camX, 0);
+    ctx.strokeStyle = hexA(theme.accent2, 0.7);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 17, 0, TAU);
+    ctx.moveTo(point.x - 27, point.y);
+    ctx.lineTo(point.x - 6, point.y);
+    ctx.moveTo(point.x + 6, point.y);
+    ctx.lineTo(point.x + 27, point.y);
+    ctx.moveTo(point.x, point.y - 27);
+    ctx.lineTo(point.x, point.y - 6);
+    ctx.moveTo(point.x, point.y + 6);
+    ctx.lineTo(point.x, point.y + 27);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  if (editor.tool === 'finish') {
+    const place = makeEditorPlacement('finish', point);
+    if (place) drawEditorMarker(place.length, 'FINISH', '#ffe45e', theme, camX, { solid: true, alpha: 0.55 });
+    return;
+  }
+
+  ctx.save();
+  ctx.translate(-camX, 0);
+  if (editor.tool === 'erase') {
+    const target = findEditorTarget(point);
+    if (target) {
+      const b = target.kind === 'object'
+        ? editorObjectBounds(target.object)
+        : { x: target.shard.x - 24, y: target.shard.y - 24, w: 48, h: 48 };
+      ctx.fillStyle = 'rgba(255,61,110,0.14)';
+      ctx.strokeStyle = '#ff4d6d';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 5]);
+      roundRect(ctx, b.x - 4, b.y - 4, b.w + 8, b.h + 8, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else {
+      ctx.strokeStyle = 'rgba(255,77,109,0.65)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 19, 0, TAU);
+      ctx.stroke();
+    }
+  } else {
+    const place = makeEditorPlacement(editor.tool, point);
+    if (place?.object) {
+      ctx.save();
+      ctx.globalAlpha = 0.6;
+      const o = place.object;
+      if (o.type === 'portal') drawPortal(o, theme, t);
+      else if (o.type === 'block') drawBlock(o, theme, t);
+      else if (o.type === 'spike') drawSpike(o, theme);
+      else if (o.type === 'saw') drawSaw(o, theme, t);
+      else if (o.type === 'pad') drawPad(o, theme, t);
+      else if (o.type === 'orb') drawOrb(o, theme, t);
+      ctx.restore();
+      const b = editorObjectBounds(place.object);
+      ctx.strokeStyle = hexA(theme.accent2, 0.55);
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4);
+      ctx.setLineDash([]);
+    } else if (place?.shard) {
+      ctx.save();
+      ctx.globalAlpha = 0.65;
+      drawShard(place.shard, theme, t);
+      ctx.restore();
+      ctx.strokeStyle = hexA(theme.accent2, 0.55);
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.arc(place.shard.x, place.shard.y, 26, 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  ctx.restore();
+}
+
+function renderEditor(t) {
+  const theme = THEMES[editor.theme] || THEMES.dawn;
+  const camX = editor.camX;
+  drawBackground(theme, camX, t, 1, true);
+  drawEditorGrid(camX, theme);
+  drawEditorMarker(0, 'START', theme.accent2, theme, camX);
+  drawEditorMarker(editorFinishX(), 'FINISH', theme.accent, theme, camX, { solid: true });
+
+  ctx.save();
+  ctx.translate(-camX, 0);
+  for (const o of editor.objects) {
+    if (o.x < camX - 140 || o.x > camX + view.logicalW + 140) continue;
+    if (o.type === 'block') drawBlock(o, theme, t);
+  }
+  for (const o of editor.objects) {
+    if (o.x < camX - 140 || o.x > camX + view.logicalW + 140) continue;
+    if (o.type === 'portal') drawPortal(o, theme, t);
+    else if (o.type === 'pad') drawPad(o, theme, t);
+    else if (o.type === 'orb') drawOrb(o, theme, t);
+    else if (o.type === 'saw') drawSaw(o, theme, t);
+    else if (o.type === 'spike') drawSpike(o, theme);
+  }
+  for (const s of editor.shards) {
+    if (s.x < camX - 100 || s.x > camX + view.logicalW + 100) continue;
+    drawShard(s, theme, t);
+  }
+  ctx.restore();
+
+  drawEditorGhost(t, theme, camX);
+
+  if (!editor.objects.length && !editor.shards.length) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.82)';
+    ctx.font = '900 22px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = hexA(theme.accent2, 0.8);
+    ctx.shadowBlur = 22;
+    ctx.fillText('BUILD SOMETHING', view.logicalW / 2, FLOOR_Y - 210);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.42)';
+    ctx.font = '700 11px system-ui, sans-serif';
+    ctx.letterSpacing = '2px';
+    ctx.fillText('PICK A TOOL AND TAP THE GRID', view.logicalW / 2, FLOOR_Y - 182);
+    ctx.restore();
+  }
+
+  const vig = ctx.createRadialGradient(
+    view.logicalW / 2, view.logicalH / 2 - view.offsetY, view.logicalW * 0.3,
+    view.logicalW / 2, view.logicalH / 2 - view.offsetY, view.logicalW * 0.8,
+  );
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.45)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, -view.offsetY, view.logicalW, view.logicalH);
+}
+
 function render(t) {
   const dpr = view.dpr;
   ctx.setTransform(dpr * view.scale, 0, 0, dpr * view.scale, 0, 0);
   ctx.clearRect(0, 0, view.logicalW, view.logicalH);
   ctx.translate(0, view.offsetY);
+
+  if (mode === 'editor') {
+    renderEditor(t);
+    return;
+  }
 
   if (!current) {
     renderAmbient(t);
@@ -1521,6 +2424,47 @@ function frame(nowMs) {
 // Input
 // ---------------------------------------------------------------------------
 window.addEventListener('keydown', (e) => {
+  if (mode === 'editor') {
+    const field = document.activeElement;
+    const editingField = field && ['INPUT', 'SELECT', 'TEXTAREA'].includes(field.tagName);
+    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') {
+      e.preventDefault();
+      persistEditor({ silent: false });
+      return;
+    }
+    if (e.code === 'Escape') {
+      e.preventDefault();
+      if (editingField) field.blur();
+      else exitEditor();
+      return;
+    }
+    if (editingField) return;
+    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+      e.preventDefault();
+      undoEditor();
+      return;
+    }
+    if (e.code === 'Delete' || e.code === 'Backspace') {
+      e.preventDefault();
+      if (editor.hover) {
+        pushEditorUndo();
+        eraseEditorAt(editor.hover);
+      }
+      return;
+    }
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+      e.preventDefault();
+      editor.camX = clamp(editor.camX - editorPanStep() * (e.shiftKey ? 2.4 : 1), 0, editorMaxCam());
+      return;
+    }
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+      e.preventDefault();
+      editor.camX = clamp(editor.camX + editorPanStep() * (e.shiftKey ? 2.4 : 1), 0, editorMaxCam());
+      return;
+    }
+    return;
+  }
+
   const jumpKey = e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW';
   if (jumpKey) {
     if (mode === 'playing') {
@@ -1544,6 +2488,10 @@ window.addEventListener('keyup', (e) => {
 });
 
 canvas.addEventListener('pointerdown', (e) => {
+  if (mode === 'editor') {
+    editorPointerDown(e);
+    return;
+  }
   if (mode !== 'playing') return;
   e.preventDefault();
   pendingPress = true;
@@ -1554,8 +2502,29 @@ canvas.addEventListener('pointerdown', (e) => {
   }
 });
 
-window.addEventListener('pointerup', () => { inputHeld = false; });
-window.addEventListener('pointercancel', () => { inputHeld = false; });
+canvas.addEventListener('pointermove', (e) => {
+  if (mode === 'editor') editorPointerMove(e);
+});
+
+canvas.addEventListener('pointerleave', () => {
+  if (mode === 'editor' && !editor.dragging) editor.hover = null;
+});
+
+canvas.addEventListener('wheel', (e) => {
+  if (mode !== 'editor') return;
+  e.preventDefault();
+  const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+  editor.camX = clamp(editor.camX + delta / view.scale, 0, editorMaxCam());
+}, { passive: false });
+
+window.addEventListener('pointerup', () => {
+  inputHeld = false;
+  editorPointerUp();
+});
+window.addEventListener('pointercancel', () => {
+  inputHeld = false;
+  editorPointerUp();
+});
 window.addEventListener('blur', () => {
   inputHeld = false;
   if (mode === 'playing') setPaused(true);
@@ -1597,6 +2566,17 @@ document.addEventListener('click', (e) => {
   const cubeCard = e.target.closest('[data-cube]');
   if (cubeCard) { equipCube(cubeCard.dataset.cube); return; }
 
+  const toolBtn = e.target.closest('[data-tool]');
+  if (toolBtn) { setEditorTool(toolBtn.dataset.tool); return; }
+
+  const panBtn = e.target.closest('[data-pan]');
+  if (panBtn) {
+    audio.ensure();
+    audio.sfx('click');
+    editor.camX = clamp(editor.camX + Number(panBtn.dataset.pan) * editorPanStep(), 0, editorMaxCam());
+    return;
+  }
+
   const actionEl = e.target.closest('[data-action]');
   if (!actionEl) return;
   const action = actionEl.dataset.action;
@@ -1605,16 +2585,38 @@ document.addEventListener('click', (e) => {
   else if (action === 'cubes') { audio.sfx('click'); showScreen('cubes'); }
   else if (action === 'achievements') { audio.sfx('click'); showScreen('awards'); }
   else if (action === 'menu') { audio.sfx('click'); showScreen('menu'); }
+  else if (action === 'editor') { audio.sfx('click'); enterEditor(); }
+  else if (action === 'editor-exit') { exitEditor(); }
+  else if (action === 'editor-save') { persistEditor({ silent: false }); }
+  else if (action === 'editor-test') { startCustomPlaytest(); }
+  else if (action === 'editor-undo') { undoEditor(); }
+  else if (action === 'editor-clear') { clearEditor(); }
   else if (action === 'resume') { setPaused(false); }
   else if (action === 'restart') { restartFromPause(); }
   else if (action === 'quit') { quitToLevels(); }
   else if (action === 'retry') {
     hideOverlay($('#overlay-result'));
-    startLevel(current.id);
+    if (customPlaytest) startCustomPlaytest();
+    else startLevel(current.id);
   } else if (action === 'next') {
     hideOverlay($('#overlay-result'));
     startLevel(LEVELS[currentIndex + 1].id);
   }
+});
+
+$('#editor-theme').addEventListener('change', (e) => {
+  editor.theme = e.target.value;
+  queueEditorSave();
+});
+
+$('#editor-speed').addEventListener('change', (e) => {
+  editor.speed = clamp(Number(e.target.value) || 360, 240, 520);
+  queueEditorSave();
+});
+
+$('#editor-name').addEventListener('input', (e) => {
+  editor.name = e.target.value.replace(/[<>]/g, '').slice(0, 24);
+  queueEditorSave();
 });
 
 $('#btn-pause').addEventListener('click', (e) => {
@@ -1627,19 +2629,25 @@ document.addEventListener('pointerdown', () => audio.ensure(), { passive: true }
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     writeSave();
+    persistEditor({ silent: true });
     if (mode === 'playing') setPaused(true);
   }
 });
-window.addEventListener('pagehide', writeSave);
+window.addEventListener('pagehide', () => {
+  writeSave();
+  persistEditor({ silent: true });
+});
 
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 resize();
+buildEditorOptions();
 refreshCounts();
 evaluateProgress({ silent: true });
 updateSoundButtons();
 updateHUD();
+updateEditorUI();
 buildLevelGrid();
 buildCubeGrid();
 buildAwardGrid();

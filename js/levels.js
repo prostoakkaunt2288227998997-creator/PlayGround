@@ -26,6 +26,21 @@ const THEMES = {
     floor: '#160207', floorLine: '#ff4d4d', block: '#4d0c18', blockEdge: '#ff9b6a',
     spike: '#ff5b5b', grid: 'rgba(255,77,77,.15)', glow: '#ff4d4d',
   },
+  time: {
+    skyTop: '#031716', skyBottom: '#075a54', accent: '#ffe45e', accent2: '#42f5e4',
+    floor: '#02100f', floorLine: '#ffe45e', block: '#073a35', blockEdge: '#80ffe8',
+    spike: '#ffe45e', grid: 'rgba(255,228,94,.12)', glow: '#ffe45e',
+  },
+  ystep: {
+    skyTop: '#17062d', skyBottom: '#5c1976', accent: '#ff5ec4', accent2: '#a8ff60',
+    floor: '#120420', floorLine: '#ff5ec4', block: '#331253', blockEdge: '#ffa8eb',
+    spike: '#ff6ad5', grid: 'rgba(255,94,196,.14)', glow: '#ff5ec4',
+  },
+  clutter: {
+    skyTop: '#0a1303', skyBottom: '#3d5c0e', accent: '#b6ff3d', accent2: '#ff9a3c',
+    floor: '#070f02', floorLine: '#b6ff3d', block: '#233805', blockEdge: '#d9ff9a',
+    spike: '#c6ff4a', grid: 'rgba(182,255,61,.12)', glow: '#b6ff3d',
+  },
 };
 
 let objectCounter = 0;
@@ -271,9 +286,140 @@ const LEVELS = [
     l.block(14800, 2, 1);
     l.spike(15400, 2);
   }),
+
+  build('l6', {
+    name: 'Time Machines',
+    tagline: 'Rewind the rhythm',
+    difficulty: 6,
+    speed: 420,
+    length: 15200,
+    theme: THEMES.time,
+    bpm: 156,
+    root: 55, // G3
+    scale: [0, 2, 3, 5, 7, 8, 10],
+    musicPattern: [0, 3, 7, 8, 10, 12, 10, 8, 7, 5, 3, 0, 5, 8, 12, 10],
+  }, (l) => {
+    l.spike(1100);
+    l.spike(1650, 2);
+    l.saw(2250);
+    l.block(2800, 2, 1);
+    l.spike(3350, 3);
+    l.shard(3450, 430);
+    l.pad(3900);
+    l.spike(4500);
+    l.saw(5100);
+    l.block(5700, 1, 2);
+    l.spike(6250, 3);
+    l.portal(7100, 'gravity', C, F - C);
+    l.spikeDown(7700);
+    l.spikeDown(8250, 2);
+    l.shard(8350, 270);
+    l.spikeDown(8650);
+    l.portal(9250, 'gravity', C, F - C);
+    l.spike(9800);
+    l.spike(10350, 2);
+    l.saw(10950);
+    l.block(11500, 2, 1);
+    l.spike(12050, 3);
+    l.pad(12700);
+    l.shard(12920, 330);
+    l.spike(13300);
+    l.spike(13850, 2);
+    l.block(14400, 1, 2);
+    l.spike(14900);
+  }),
+
+  build('l7', {
+    name: 'Ystep',
+    tagline: 'Every step hits harder',
+    difficulty: 7,
+    speed: 440,
+    length: 16000,
+    theme: THEMES.ystep,
+    bpm: 164,
+    root: 54, // F#3
+    scale: [0, 2, 3, 5, 7, 9, 10],
+    musicPattern: [0, 3, 5, 7, 9, 12, 9, 7, 5, 3, 0, 7, 12, 10, 7, 5],
+  }, (l) => {
+    l.spike(1000);
+    l.spike(1550, 2);
+    l.saw(2100);
+    l.block(2650, 1, 1);
+    l.spike(3200, 3);
+    l.shard(3300, 430);
+    l.pad(3750);
+    l.saw(4400);
+    l.spike(4950, 2);
+    l.block(5500, 2, 1);
+    l.spike(6050);
+    l.portal(6800, 'gravity', C, F - C);
+    l.spikeDown(7400);
+    l.spikeDown(7950, 2);
+    l.shard(8050, 270);
+    l.spikeDown(8350);
+    l.portal(8950, 'gravity', C, F - C);
+    l.portal(9500, 'speed', F - 300, 300, 1.2);
+    l.spike(10000);
+    l.spike(10600, 2);
+    l.saw(11200);
+    l.block(11800, 2, 1);
+    l.spike(12400, 3);
+    l.pad(13000);
+    l.shard(13220, 330);
+    l.spike(13600);
+    l.spike(14150, 2);
+    l.block(14700, 1, 2);
+    l.spike(15300);
+  }),
+
+  build('l8', {
+    name: 'Clutterfunk',
+    tagline: 'Order inside the chaos',
+    difficulty: 8,
+    speed: 460,
+    length: 17000,
+    theme: THEMES.clutter,
+    bpm: 170,
+    root: 51, // D#3
+    scale: [0, 1, 3, 5, 7, 8, 10],
+    musicPattern: [0, 3, 5, 7, 8, 10, 12, 10, 8, 7, 5, 3, 0, 10, 12, 15],
+  }, (l) => {
+    l.spike(900);
+    l.spike(1400, 2);
+    l.saw(1900);
+    l.block(2400, 1, 1);
+    l.spike(2900, 3);
+    l.shard(3000, 430);
+    l.pad(3450);
+    l.saw(4050);
+    l.spike(4600, 2);
+    l.block(5150, 2, 1);
+    l.spike(5700, 3);
+    l.portal(6350, 'speed', F - 300, 300, 1.15);
+    l.spike(6900);
+    l.saw(7500);
+    l.portal(8150, 'gravity', C, F - C);
+    l.spikeDown(8750);
+    l.spikeDown(9300, 2);
+    l.shard(9400, 270);
+    l.spikeDown(9700);
+    l.portal(10300, 'gravity', C, F - C);
+    l.portal(10850, 'speed', F - 300, 300, 1.2);
+    l.spike(11350);
+    l.spike(11950, 2);
+    l.saw(12550);
+    l.block(13150, 2, 1);
+    l.spike(13750, 3);
+    l.pad(14350);
+    l.shard(14570, 330);
+    l.spike(14950);
+    l.spike(15500, 2);
+    l.block(16050, 1, 2);
+    l.spike(16600);
+  }),
 ];
 
 export { LEVELS, THEMES };
 
-export const DIFFICULTY_LABELS = ['Easy', 'Normal', 'Hard', 'Harder', 'Insane'];
-export const DIFFICULTY_COLORS = ['#5cf28a', '#59c8ff', '#ffd35c', '#ff8a5c', '#ff4d6d'];
+export const DIFFICULTY_LABELS = ['Easy', 'Normal', 'Hard', 'Harder', 'Insane', 'Extreme', 'Chaos', 'Legendary'];
+export const DIFFICULTY_COLORS = ['#5cf28a', '#59c8ff', '#ffd35c', '#ff8a5c', '#ff4d6d', '#ff5ec4', '#a8ff60', '#42f5e4'];
