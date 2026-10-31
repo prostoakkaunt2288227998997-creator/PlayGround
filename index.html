@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#0a0418" />
+  <meta name="description" content="Geometry Dash: Neon Edition — five handcrafted rhythm-platformer levels, ten cubes and ten achievements. Jump the spikes. Chase the shards." />
+  <title>Geometry Dash — Neon Edition</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="game" aria-label="Geometry Dash game canvas"></canvas>
+
+    <div id="hud" class="hud is-hidden">
+      <div class="hud-top">
+        <button class="icon-btn" id="btn-pause" type="button" aria-label="Pause game">❚❚</button>
+        <div class="hud-center">
+          <div class="hud-meta">
+            <span id="hud-level">STEREO DAWN</span>
+            <span id="hud-attempt">ATTEMPT 1</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="progress-fill"></div>
+            <div class="progress-knob" id="progress-knob"></div>
+            <span class="progress-pct" id="progress-pct">0%</span>
+          </div>
+        </div>
+        <div class="hud-side">
+          <div class="hud-shards" id="hud-shards" aria-label="Shards collected">
+            <span>♦</span><span>♦</span><span>♦</span>
+          </div>
+          <button class="icon-btn" type="button" data-sound aria-label="Toggle sound">♪</button>
+        </div>
+      </div>
+      <div class="hud-hint" id="hud-hint">SPACE / TAP TO JUMP</div>
+    </div>
+
+    <main id="screens">
+      <section class="screen is-active" id="screen-menu">
+        <div class="screen-bg"></div>
+        <div class="menu-wrap">
+          <div class="brand">
+            <div class="brand-kicker">NEON EDITION</div>
+            <h1 class="logo" aria-label="Geometry Dash">
+              <span class="logo-a">GEOMETRY</span>
+              <span class="logo-b">DASH</span>
+            </h1>
+            <p class="tagline">Five levels. Ten cubes. One more attempt.</p>
+          </div>
+
+          <div class="menu-actions">
+            <button class="btn btn-hero" type="button" data-action="play">
+              <span class="btn-icon">▶</span>
+              <span>PLAY</span>
+              <small>5 LEVELS</small>
+            </button>
+            <div class="menu-row">
+              <button class="btn btn-panel" type="button" data-action="cubes">
+                <span class="glyph">▣</span>
+                <span>CUBES</span>
+                <small id="menu-cubes">1/10</small>
+              </button>
+              <button class="btn btn-panel" type="button" data-action="achievements">
+                <span class="glyph">♛</span>
+                <span>AWARDS</span>
+                <small id="menu-awards">0/10</small>
+              </button>
+            </div>
+          </div>
+
+          <div class="menu-stats">
+            <div class="stat"><b id="menu-levels">0/5</b><span>LEVELS</span></div>
+            <div class="stat"><b id="menu-shards">0/15</b><span>SHARDS</span></div>
+            <div class="stat"><b id="menu-perfect">0</b><span>FLAWLESS</span></div>
+          </div>
+
+          <p class="controls-note"><kbd>SPACE</kbd> / <kbd>TAP</kbd> to jump · hold to auto-jump · <kbd>ESC</kbd> pause</p>
+        </div>
+        <button class="icon-btn sound-toggle" type="button" data-sound aria-label="Toggle sound">♪</button>
+      </section>
+
+      <section class="screen" id="screen-levels">
+        <div class="screen-bg"></div>
+        <div class="page">
+          <header class="page-head">
+            <button class="icon-btn back" type="button" data-action="menu" aria-label="Back to menu">←</button>
+            <div class="page-title">
+              <div class="kicker">MAINFRAME</div>
+              <h2>Select Level</h2>
+            </div>
+            <div class="page-meta" id="levels-done">0/5 COMPLETE</div>
+          </header>
+          <div class="level-grid" id="level-grid"></div>
+          <p class="page-note">Ride the beat. Shards are optional collectibles — often just off the safest line.</p>
+        </div>
+        <button class="icon-btn sound-toggle" type="button" data-sound aria-label="Toggle sound">♪</button>
+      </section>
+
+      <section class="screen" id="screen-cubes">
+        <div class="screen-bg"></div>
+        <div class="page">
+          <header class="page-head">
+            <button class="icon-btn back" type="button" data-action="menu" aria-label="Back to menu">←</button>
+            <div class="page-title">
+              <div class="kicker">WARDROBE</div>
+              <h2>Choose Your Cube</h2>
+            </div>
+            <div class="page-meta" id="cubes-count">1/10 UNLOCKED</div>
+          </header>
+          <div class="cube-grid" id="cube-grid"></div>
+          <p class="page-note">Every cube has its own face. Unlock them by playing, collecting and — inevitably — crashing.</p>
+        </div>
+        <button class="icon-btn sound-toggle" type="button" data-sound aria-label="Toggle sound">♪</button>
+      </section>
+
+      <section class="screen" id="screen-awards">
+        <div class="screen-bg"></div>
+        <div class="page">
+          <header class="page-head">
+            <button class="icon-btn back" type="button" data-action="menu" aria-label="Back to menu">←</button>
+            <div class="page-title">
+              <div class="kicker">TROPHY ROOM</div>
+              <h2>Achievements</h2>
+            </div>
+            <div class="page-meta" id="awards-count">0/10 EARNED</div>
+          </header>
+          <div class="award-grid" id="award-grid"></div>
+        </div>
+        <button class="icon-btn sound-toggle" type="button" data-sound aria-label="Toggle sound">♪</button>
+      </section>
+    </main>
+
+    <div class="overlay" id="overlay-pause" aria-hidden="true">
+      <div class="overlay-bg"></div>
+      <div class="modal">
+        <div class="kicker">PAUSED</div>
+        <h2>Take A Breath</h2>
+        <p class="modal-sub" id="pause-level">Stereo Dawn · 0%</p>
+        <div class="modal-actions">
+          <button class="btn btn-hero" type="button" data-action="resume">RESUME</button>
+          <button class="btn" type="button" data-action="restart">RESTART</button>
+          <button class="btn btn-ghost" type="button" data-action="quit">LEVEL SELECT</button>
+        </div>
+        <p class="controls-note"><kbd>ESC</kbd> resume · <kbd>SPACE</kbd> jump</p>
+      </div>
+    </div>
+
+    <div class="overlay" id="overlay-result" aria-hidden="true">
+      <div class="overlay-bg"></div>
+      <div class="modal modal-result">
+        <div class="result-badge">✓</div>
+        <div class="kicker" id="result-kicker">LEVEL COMPLETE</div>
+        <h2 id="result-title">Stereo Dawn</h2>
+        <div class="result-percent" id="result-percent">100%</div>
+        <div class="result-stats">
+          <div><b id="result-attempts">1</b><span>ATTEMPTS</span></div>
+          <div><b id="result-shards">0/3</b><span>SHARDS</span></div>
+          <div><b id="result-best">100%</b><span>BEST</span></div>
+        </div>
+        <div class="result-flags" id="result-flags"></div>
+        <div class="modal-actions result-actions">
+          <button class="btn btn-hero" type="button" data-action="next" id="btn-next">NEXT LEVEL</button>
+          <button class="btn" type="button" data-action="retry">REPLAY</button>
+          <button class="btn btn-ghost" type="button" data-action="quit">LEVEL SELECT</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
